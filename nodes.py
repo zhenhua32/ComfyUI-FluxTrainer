@@ -91,10 +91,15 @@ class FluxTrainModelSelect:
 
 
 class TrainDatasetGeneralConfig:
+    """
+    数据集配置
+    """
+
     queue_counter = 0
 
     @classmethod
     def IS_CHANGED(s, reset_on_queue=False, **kwargs):
+        """判断是否要缓存"""
         if reset_on_queue:
             s.queue_counter += 1
         print(f"queue_counter: {s.queue_counter}")
@@ -134,6 +139,7 @@ class TrainDatasetGeneralConfig:
         color_aug,
         flip_aug,
         alpha_mask,
+        # 可选的参数
         reset_on_queue=False,
         caption_extension=".txt",
     ):
@@ -147,7 +153,7 @@ class TrainDatasetGeneralConfig:
                 "color_aug": color_aug,
                 "flip_aug": flip_aug,
             },
-            "datasets": [],
+            "datasets": [],  # 这里是空的初始化
         }
         dataset_json = json.dumps(dataset, indent=2)
         # print(dataset_json)
@@ -156,6 +162,9 @@ class TrainDatasetGeneralConfig:
 
 
 class TrainDatasetRegularization:
+    """
+    数据集的正规化配置
+    """
 
     @classmethod
     def INPUT_TYPES(s):
@@ -184,6 +193,7 @@ class TrainDatasetRegularization:
             },
         }
 
+    # 返回类型是 JSON
     RETURN_TYPES = ("JSON",)
     RETURN_NAMES = ("subset",)
     FUNCTION = "create_config"
@@ -202,6 +212,10 @@ class TrainDatasetRegularization:
 
 
 class TrainDatasetAdd:
+    """
+    添加数据集
+    """
+
     def __init__(self):
         self.previous_dataset_signature = None
 
@@ -255,6 +269,7 @@ class TrainDatasetAdd:
                 ),
             },
             "optional": {
+                # 对应的就是 TrainDatasetRegularization
                 "regularization": ("JSON", {"tooltip": "reg data dir"}),
             },
         }
@@ -295,9 +310,10 @@ class TrainDatasetAdd:
         # Generate a signature for the new dataset
         new_dataset_signature = self.generate_signature(new_dataset)
 
-        # Load the existing datasets
+        # Load the existing datasets 来自 TrainDatasetGeneralConfig
         existing_datasets = json.loads(dataset_config["datasets"])
 
+        # 合并数据集
         # Remove the previously added dataset if it exists
         if self.previous_dataset_signature:
             existing_datasets["datasets"] = [
@@ -312,7 +328,7 @@ class TrainDatasetAdd:
         # Store the new dataset signature for future runs
         self.previous_dataset_signature = new_dataset_signature
 
-        # Convert back to JSON and update dataset_config
+        # Convert back to JSON and update dataset_config 依然是 JSON 字符串
         updated_dataset_json = json.dumps(existing_datasets, indent=2)
         dataset_config["datasets"] = updated_dataset_json
 
@@ -324,6 +340,10 @@ class TrainDatasetAdd:
 
 
 class OptimizerConfig:
+    """
+    优化器配置, 通用版
+    """
+
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -377,12 +397,18 @@ class OptimizerConfig:
     CATEGORY = "FluxTrainer"
 
     def create_config(self, min_snr_gamma, extra_optimizer_args, **kwargs):
+        # 附加到 kwargs 中. comfy 传参的时候会按关键字函数调用
+        # extra_optimizer_args 是按 | 分割的
         kwargs["min_snr_gamma"] = min_snr_gamma if min_snr_gamma != 0.0 else None
         kwargs["optimizer_args"] = [arg.strip() for arg in extra_optimizer_args.strip().split("|") if arg.strip()]
         return (kwargs,)
 
 
 class OptimizerConfigAdafactor:
+    """
+    Adafactor 的优化器配置
+    """
+
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -429,6 +455,7 @@ class OptimizerConfigAdafactor:
     def create_config(
         self, relative_step, scale_parameter, warmup_init, clip_threshold, min_snr_gamma, extra_optimizer_args, **kwargs
     ):
+        # 定义了优化器类型
         kwargs["optimizer_type"] = "adafactor"
         extra_args = [arg.strip() for arg in extra_optimizer_args.strip().split("|") if arg.strip()]
         node_args = [
@@ -437,6 +464,7 @@ class OptimizerConfigAdafactor:
             f"warmup_init={warmup_init}",
             f"clip_threshold={clip_threshold}",
         ]
+        # 合并优化器参数
         kwargs["optimizer_args"] = node_args + extra_args
         kwargs["min_snr_gamma"] = min_snr_gamma if min_snr_gamma != 0.0 else None
 
@@ -444,6 +472,10 @@ class OptimizerConfigAdafactor:
 
 
 class OptimizerConfigProdigy:
+    """
+    Prodigy 的优化器配置
+    """
+
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -501,6 +533,10 @@ class OptimizerConfigProdigy:
 
 
 class InitFluxLoRATraining:
+    """
+    flux LoRA 训练参数
+    """
+
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -509,6 +545,7 @@ class InitFluxLoRATraining:
                 "dataset": ("JSON",),
                 "optimizer_settings": ("ARGS",),
                 "output_name": ("STRING", {"default": "flux_lora", "multiline": False}),
+                # 输出目录
                 "output_dir": (
                     "STRING",
                     {
@@ -517,6 +554,7 @@ class InitFluxLoRATraining:
                         "tooltip": "path to dataset, root is the 'ComfyUI' folder, with windows portable 'ComfyUI_windows_portable'",
                     },
                 ),
+                # 网络维度
                 "network_dim": ("INT", {"default": 4, "min": 1, "max": 2048, "step": 1, "tooltip": "network dim"}),
                 "network_alpha": (
                     "FLOAT",
@@ -526,6 +564,7 @@ class InitFluxLoRATraining:
                     "FLOAT",
                     {"default": 4e-4, "min": 0.0, "max": 10.0, "step": 0.000001, "tooltip": "learning rate"},
                 ),
+                # 这个是最大训练步数
                 "max_train_steps": (
                     "INT",
                     {"default": 1500, "min": 1, "max": 100000, "step": 1, "tooltip": "max number of training steps"},
@@ -543,6 +582,7 @@ class InitFluxLoRATraining:
                         "tooltip": "[EXPERIMENTAL] use split mode for Flux model, network arg `train_blocks=single` is required",
                     },
                 ),
+                # 这个选项是什么用处
                 "weighting_scheme": (["logit_normal", "sigma_sqrt", "mode", "cosmap", "none"],),
                 "logit_mean": (
                     "FLOAT",
@@ -704,6 +744,7 @@ class InitFluxLoRATraining:
         T5_lr=0,
         **kwargs,
     ):
+        # 清空显存
         mm.soft_empty_cache()
 
         output_dir = os.path.abspath(kwargs.get("output_dir"))
@@ -711,15 +752,18 @@ class InitFluxLoRATraining:
 
         total, used, free = shutil.disk_usage(output_dir)
 
+        # 至少需要 2GB 空间
         required_free_space = 2 * (2**30)
         if free <= required_free_space:
             raise ValueError(
                 f"Insufficient disk space. Required: {required_free_space/2**30}GB. Available: {free/2**30}GB"
             )
 
+        # 数据集配置
         dataset_config = dataset["datasets"]
         dataset_toml = toml.dumps(json.loads(dataset_config))
 
+        # 参数解析
         parser = train_network_setup_parser()
         if additional_args is not None:
             print(f"additional_args: {additional_args}")
@@ -756,6 +800,7 @@ class InitFluxLoRATraining:
         else:
             prompts = [sample_prompts]
 
+        # 完整的配置参数
         config_dict = {
             "sample_prompts": prompts,
             "save_precision": save_dtype,
@@ -769,7 +814,9 @@ class InitFluxLoRATraining:
             "persistent_data_loader_workers": False,
             "max_data_loader_n_workers": 0,
             "seed": 42,
+            # 网络模块
             "network_module": ".networks.lora_flux",
+            # 数据集配置, 格式是 toml 的
             "dataset_config": dataset_toml,
             "output_name": f"{output_name}_rank{kwargs.get('network_dim')}_{save_dtype}",
             "loss_type": "l2",
@@ -780,6 +827,7 @@ class InitFluxLoRATraining:
             "disable_mmap_load_safetensors": False,
             "split_mode": split_mode,
         }
+        # 注意力加速设置
         attention_settings = {
             "sdpa": {"mem_eff_attn": True, "xformers": False, "spda": True},
             "xformers": {"mem_eff_attn": True, "xformers": True, "spda": False},
@@ -822,23 +870,27 @@ class InitFluxLoRATraining:
         else:
             config_dict["gradient_checkpointing"] = True
 
+        # 还可以加载 lora
         if flux_models["lora_path"]:
             config_dict["network_weights"] = flux_models["lora_path"]
 
+        # 合并所有参数
         config_dict.update(kwargs)
         config_dict.update(optimizer_settings)
 
         if resume_args:
             config_dict.update(resume_args)
 
+        # 全部参数添加到 args 中
         for key, value in config_dict.items():
             setattr(args, key, value)
 
+        # 将参数保存到文件中
         saved_args_file_path = os.path.join(output_dir, f"{output_name}_args.json")
         with open(saved_args_file_path, "w") as f:
             json.dump(vars(args), f, indent=4)
 
-        # workflow saving
+        # workflow saving 方便下次复现训练任务
         metadata = {}
         if extra_pnginfo is not None:
             metadata.update(extra_pnginfo["workflow"])
@@ -849,6 +901,7 @@ class InitFluxLoRATraining:
 
         # pass args to kohya and initialize trainer
         with torch.inference_mode(False):
+            # 初始化训练器, 训练核心在这里
             network_trainer = FluxNetworkTrainer()
             training_loop = network_trainer.init_train(args)
 
@@ -862,6 +915,10 @@ class InitFluxLoRATraining:
 
 
 class InitFluxTraining:
+    """
+    可能是全量微调
+    """
+
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -1145,6 +1202,7 @@ class InitFluxTraining:
             setattr(args, key, value)
 
         with torch.inference_mode(False):
+            # 不同的初始化方法
             network_trainer = FluxTrainer()
             training_loop = network_trainer.init_train(args)
 
@@ -1162,6 +1220,10 @@ class InitFluxTraining:
 
 
 class InitFluxTrainingFromPreset:
+    """
+    应该是已有的训练参数中恢复
+    """
+
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -1246,6 +1308,7 @@ class InitFluxTrainingFromPreset:
             setattr(args, key, value)
 
         with torch.inference_mode(False):
+            # 那这里还是初始化 lora 训练器的
             network_trainer = FluxNetworkTrainer()
             training_loop = network_trainer.init_train(args)
 
@@ -1261,11 +1324,16 @@ class InitFluxTrainingFromPreset:
 
 
 class FluxTrainLoop:
+    """
+    一个训练循环
+    """
+
     @classmethod
     def INPUT_TYPES(s):
         return {
             "required": {
                 "network_trainer": ("NETWORKTRAINER",),
+                # 指定步数
                 "steps": (
                     "INT",
                     {
@@ -1291,18 +1359,24 @@ class FluxTrainLoop:
     CATEGORY = "FluxTrainer"
 
     def train(self, network_trainer, steps):
+        """
+        真正开始训练了
+        """
         with torch.inference_mode(False):
             training_loop = network_trainer["training_loop"]
             network_trainer = network_trainer["network_trainer"]
+            # 当前步数
             initial_global_step = network_trainer.global_step
 
             target_global_step = network_trainer.global_step + steps
+            # 进度条ui
             comfy_pbar = comfy.utils.ProgressBar(steps)
             network_trainer.comfy_pbar = comfy_pbar
 
             network_trainer.optimizer_train_fn()
 
             while network_trainer.global_step < target_global_step:
+                # 训练一步
                 steps_done = training_loop(
                     break_at_steps=target_global_step,
                     epoch=network_trainer.current_epoch.value,
@@ -1321,6 +1395,10 @@ class FluxTrainLoop:
 
 
 class FluxTrainSave:
+    """
+    保存 lora 模型
+    """
+
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -1372,6 +1450,7 @@ class FluxTrainSave:
             if save_state:
                 train_util.save_and_remove_state_stepwise(trainer.args, trainer.accelerator, global_step)
 
+            # 复制到 comfy lora 文件夹下
             lora_path = os.path.join(trainer.args.output_dir, ckpt_name)
             if copy_to_comfy_lora_folder:
                 destination_dir = os.path.join(folder_paths.models_dir, "loras", "flux_trainer")
@@ -1429,6 +1508,7 @@ class FluxTrainSaveModel:
                 trainer.accelerator.unwrap_model(trainer.unet),
             )
 
+            # 复制到 diffusion_models 模型下, 这个是全量微调的模型
             model_path = os.path.join(trainer.args.output_dir, ckpt_name)
             if copy_to_comfy_model_folder:
                 shutil.copy(
@@ -1442,6 +1522,10 @@ class FluxTrainSaveModel:
 
 
 class FluxTrainEnd:
+    """
+    训练结束的端点
+    """
+
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -1480,6 +1564,7 @@ class FluxTrainEnd:
             if save_state:
                 train_util.save_state_on_train_end(network_trainer.args, network_trainer.accelerator)
 
+            # 最后再保存一版模型
             ckpt_name = train_util.get_last_ckpt_name(network_trainer.args, "." + network_trainer.args.save_model_as)
             network_trainer.save_model(
                 ckpt_name,
@@ -1496,6 +1581,7 @@ class FluxTrainEnd:
             # metadata
             metadata = json.dumps(network_trainer.metadata, indent=2)
 
+            # 直接重置清理
             training_loop = None
             network_trainer = None
             mm.soft_empty_cache()
@@ -1504,6 +1590,10 @@ class FluxTrainEnd:
 
 
 class FluxTrainResume:
+    """
+    这个才是从训练中恢复
+    """
+
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -1525,6 +1615,10 @@ class FluxTrainResume:
 
 
 class FluxTrainBlockSelect:
+    """
+    选择要训练的块
+    """
+
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -1560,12 +1654,14 @@ class FluxTrainBlockSelect:
         # Extract the prefix and suffix from the first element
         prefix_suffix_pattern = re.compile(r"(.*)_blocks_(.*)")
 
+        # 处理每个元素
         for element in elements:
             element = element.strip()
             match = prefix_suffix_pattern.match(element)
             if match:
                 prefix = match.group(1) + "_blocks_"
                 suffix = match.group(2)
+                # 匹配数字范围
                 matches = pattern.findall(suffix)
                 if matches:
                     for start, end in matches:
@@ -1593,6 +1689,10 @@ class FluxTrainBlockSelect:
 
 
 class FluxTrainValidationSettings:
+    """
+    训练验证的设置
+    """
+
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -1627,6 +1727,10 @@ class FluxTrainValidationSettings:
 
 
 class FluxTrainValidate:
+    """
+    训练验证
+    """
+
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -1665,6 +1769,7 @@ class FluxTrainValidate:
             validation_settings,
         )
         network_trainer.optimizer_eval_fn()
+        # 生成验证图片
         image_tensors = network_trainer.sample_images(*params)
 
         trainer = {
@@ -1673,11 +1778,16 @@ class FluxTrainValidate:
         }
         return (
             trainer,
+            # 将图像张量的值从 [-1, 1] 归一化到 [0, 1]
             (0.5 * (image_tensors + 1.0)).cpu().float(),
         )
 
 
 class VisualizeLoss:
+    """
+    可视化损失
+    """
+
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -1828,6 +1938,7 @@ class FluxKohyaInferenceSampler:
         loading_device = "cpu"
         ae_dtype = torch.bfloat16
 
+        # 模型加载
         pretrained_model_name_or_path = flux_models["transformer"]
         clip_l = flux_models["clip_l"]
         t5xxl = flux_models["t5"]
@@ -1880,6 +1991,7 @@ class FluxKohyaInferenceSampler:
             lora_model.to(device)
         lora_models.append(lora_model)
 
+        # 生成 noise
         packed_latent_height, packed_latent_width = math.ceil(height / 16), math.ceil(width / 16)
         noise = torch.randn(
             1,
@@ -1921,6 +2033,7 @@ class FluxKohyaInferenceSampler:
         if torch.isnan(t5_out).any():
             raise ValueError("NaN in t5_out")
 
+        # 用完回收显存
         clip_l = clip_l.cpu()
         t5xxl = t5xxl.cpu()
 
@@ -1941,6 +2054,7 @@ class FluxKohyaInferenceSampler:
         def get_lin_function(
             x1: float = 256, y1: float = 0.5, x2: float = 4096, y2: float = 1.15
         ) -> Callable[[float], float]:
+            """生成一个线性函数, (x1, y1) 和 (x2, y2) 是两个点"""
             m = (y2 - y1) / (x2 - x1)
             b = y1 - m * x1
             return lambda x: m * x + b
@@ -1974,11 +2088,13 @@ class FluxKohyaInferenceSampler:
             guidance: float = 4.0,
             t5_attn_mask: Optional[torch.Tensor] = None,
         ):
+            """去噪"""
             # this is ignored for schnell
             guidance_vec = torch.full((img.shape[0],), guidance, device=img.device, dtype=img.dtype)
             comfy_pbar = comfy.utils.ProgressBar(total=len(timesteps))
             for t_curr, t_prev in zip(tqdm(timesteps[:-1]), timesteps[1:]):
                 t_vec = torch.full((img.shape[0],), t_curr, dtype=img.dtype, device=img.device)
+                # 预测结果
                 pred = model(
                     img=img,
                     img_ids=img_ids,
@@ -2027,6 +2143,7 @@ class FluxKohyaInferenceSampler:
                         t5_attn_mask=t5_attn_mask,
                     )
             else:
+                # 不懂这里是什么操作
                 with torch.autocast(device_type=device.type, dtype=flux_dtype):
                     l_pooled, _, _, _ = encoding_strategy.encode_tokens(
                         tokenize_strategy, [clip_l, None], tokens_and_masks
@@ -2061,10 +2178,11 @@ class FluxKohyaInferenceSampler:
         # unpack
         x = x.float()
         x = einops.rearrange(
+            # 重新排列维度
             x, "b (h w) (c ph pw) -> b c (h ph) (w pw)", h=packed_latent_height, w=packed_latent_width, ph=2, pw=2
         )
 
-        # decode
+        # decode 使用 ae 解码成图片
         logger.info("Decoding image...")
         ae = ae.to(device)
         with torch.no_grad():
@@ -2077,6 +2195,7 @@ class FluxKohyaInferenceSampler:
 
         ae = ae.cpu()
 
+        # 限制大小到 -1, 1, 然后转换维度, 从 (b, c, h, w) -> (b, h, w, c)
         x = x.clamp(-1, 1)
         x = x.permute(0, 2, 3, 1)
 
@@ -2196,6 +2315,10 @@ class UploadToHuggingFace:
 
 
 class ExtractFluxLoRA:
+    """
+    提取 lora
+    """
+
     @classmethod
     def INPUT_TYPES(s):
         return {
