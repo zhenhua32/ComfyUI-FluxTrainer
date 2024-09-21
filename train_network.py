@@ -88,7 +88,10 @@ class NetworkTrainer:
 
             logs[f"lr/{lr_desc}"] = lr
 
-            if args.optimizer_type.lower().startswith("DAdapt".lower()) or args.optimizer_type.lower() == "Prodigy".lower():
+            if (
+                args.optimizer_type.lower().startswith("DAdapt".lower())
+                or args.optimizer_type.lower() == "Prodigy".lower()
+            ):
                 # tracking d*lr value
                 logs[f"lr/d*lr/{lr_desc}"] = (
                     lr_scheduler.optimizers[-1].param_groups[i]["d"] * lr_scheduler.optimizers[-1].param_groups[i]["lr"]
@@ -104,7 +107,9 @@ class NetworkTrainer:
 
         # Incorporate xformers or memory efficient attention into the model
         train_util.replace_unet_modules(unet, args.mem_eff_attn, args.xformers, args.sdpa)
-        if torch.__version__ >= "2.0.0":  # If you have xformers compatible with PyTorch 2.0.0 or higher, you can use the following
+        if (
+            torch.__version__ >= "2.0.0"
+        ):  # If you have xformers compatible with PyTorch 2.0.0 or higher, you can use the following
             vae.set_use_memory_efficient_attention_xformers(args.xformers)
 
         return model_util.get_model_version_str_for_sd1_sd2(args.v2, args.v_parameterization), text_encoder, vae, unet
@@ -163,7 +168,11 @@ class NetworkTrainer:
 
     def get_noise_scheduler(self, args: argparse.Namespace, device: torch.device) -> Any:
         noise_scheduler = DDPMScheduler(
-            beta_start=0.00085, beta_end=0.012, beta_schedule="scaled_linear", num_train_timesteps=1000, clip_sample=False
+            beta_start=0.00085,
+            beta_end=0.012,
+            beta_schedule="scaled_linear",
+            num_train_timesteps=1000,
+            clip_sample=False,
         )
         prepare_scheduler_for_custom_training(noise_scheduler, device)
         if args.zero_terminal_snr:
@@ -191,7 +200,9 @@ class NetworkTrainer:
     ):
         # Sample noise, sample a random timestep for each image, and add noise to the latents,
         # with noise offset and/or multires noise if specified
-        noise, noisy_latents, timesteps, huber_c = train_util.get_noise_noisy_latents_and_timesteps(args, noise_scheduler, latents)
+        noise, noisy_latents, timesteps, huber_c = train_util.get_noise_noisy_latents_and_timesteps(
+            args, noise_scheduler, latents
+        )
 
         # ensure the hidden state will require grad
         if args.gradient_checkpointing:
@@ -285,9 +296,7 @@ class NetworkTrainer:
                 ignored = ["train_data_dir", "reg_data_dir", "in_json"]
                 if any(getattr(args, attr) is not None for attr in ignored):
                     logger.warning(
-                        "ignoring the following options because config file is found: {0}".format(
-                            ", ".join(ignored)
-                        )
+                        "ignoring the following options because config file is found: {0}".format(", ".join(ignored))
                     )
             else:
                 if use_dreambooth_method:
@@ -348,7 +357,6 @@ class NetworkTrainer:
         logger.info("preparing accelerator")
         accelerator = train_util.prepare_accelerator(args)
 
-
         # Prepare a type that supports mixed precision and cast it as appropriate.
         weight_dtype, save_dtype = train_util.prepare_dtype(args)
         vae_dtype = torch.float32 if args.no_half_vae else weight_dtype
@@ -362,9 +370,9 @@ class NetworkTrainer:
         pbar.update(1)
 
         # Load the model for incremental learning
-        #sys.path.append(os.path.dirname(__file__))
+        # sys.path.append(os.path.dirname(__file__))
         accelerator.print("import network module:", args.network_module)
-        package = __name__.split('.')[0]
+        package = __name__.split(".")[0]
         network_module = importlib.import_module(args.network_module, package=package)
 
         if args.base_weights is not None:
@@ -380,10 +388,11 @@ class NetworkTrainer:
                 module, weights_sd = network_module.create_network_from_weights(
                     multiplier, weight_path, vae, text_encoder, unet, for_inference=True
                 )
-                module.merge_to(text_encoder, unet, weights_sd, weight_dtype, accelerator.device if args.lowram else "cpu")
+                module.merge_to(
+                    text_encoder, unet, weights_sd, weight_dtype, accelerator.device if args.lowram else "cpu"
+                )
 
             accelerator.print(f"all weights merged: {', '.join(args.base_weights)}")
-
 
         # cache latents
         if cache_latents:
@@ -403,7 +412,9 @@ class NetworkTrainer:
         text_encoder_outputs_caching_strategy = self.get_text_encoder_outputs_caching_strategy(args)
         if text_encoder_outputs_caching_strategy is not None:
             strategy_base.TextEncoderOutputsCachingStrategy.set_strategy(text_encoder_outputs_caching_strategy)
-        self.cache_text_encoder_outputs_if_needed(args, accelerator, unet, vae, text_encoders, train_dataset_group, weight_dtype)
+        self.cache_text_encoder_outputs_if_needed(
+            args, accelerator, unet, vae, text_encoders, train_dataset_group, weight_dtype
+        )
 
         pbar.update(1)
 
@@ -416,7 +427,9 @@ class NetworkTrainer:
 
         # if a new network is added in future, add if ~ then blocks for each network (;'∀')
         if args.dim_from_weights:
-            network, _ = network_module.create_network_from_weights(1, args.network_weights, vae, text_encoder, unet, **net_kwargs)
+            network, _ = network_module.create_network_from_weights(
+                1, args.network_weights, vae, text_encoder, unet, **net_kwargs
+            )
         else:
             if "dropout" not in net_kwargs:
                 # workaround for LyCORIS (;^ω^)
@@ -477,10 +490,14 @@ class NetworkTrainer:
         if support_multiple_lrs:
             text_encoder_lr = args.text_encoder_lr
         else:
-            text_encoder_lr = None if args.text_encoder_lr is None or len(args.text_encoder_lr) == 0 else args.text_encoder_lr[0]
+            text_encoder_lr = (
+                None if args.text_encoder_lr is None or len(args.text_encoder_lr) == 0 else args.text_encoder_lr[0]
+            )
         try:
             if support_multiple_lrs:
-                results = network.prepare_optimizer_params_with_multiple_te_lrs(text_encoder_lr, args.unet_lr, args.learning_rate)
+                results = network.prepare_optimizer_params_with_multiple_te_lrs(
+                    text_encoder_lr, args.unet_lr, args.learning_rate
+                )
             else:
                 results = network.prepare_optimizer_params(text_encoder_lr, args.unet_lr, args.learning_rate)
             if type(results) is tuple:
@@ -556,9 +573,7 @@ class NetworkTrainer:
         # Experimental Feature: Put base model into fp8 to save vram
         if args.fp8_base or args.fp8_base_unet:
             assert torch.__version__ >= "2.1.0", "fp8_base requires torch>=2.1.0"
-            assert (
-                args.mixed_precision != "no"
-            ), "fp8_base requires mixed precision='fp16' or 'bf16'"
+            assert args.mixed_precision != "no", "fp8_base requires mixed precision='fp16' or 'bf16'"
             accelerator.print("enable fp8 training for U-Net.")
             unet_weight_dtype = torch.float8_e4m3fn if args.fp8_dtype == "e4m3" else torch.float8_e5m2
             accelerator.print(f"unet_weight_dtype: {unet_weight_dtype}")
@@ -569,7 +584,7 @@ class NetworkTrainer:
 
             # unet.to(accelerator.device)  # this makes faster `to(dtype)` below, but consumes 23 GB VRAM
             # unet.to(dtype=unet_weight_dtype)  # without moving to gpu, this takes a lot of time and main memory
-            
+
             unet.to(accelerator.device, dtype=unet_weight_dtype)  # this seems to be safer than above
 
         unet.requires_grad_(False)
@@ -603,7 +618,9 @@ class NetworkTrainer:
             if train_unet:
                 unet = accelerator.prepare(unet)
             else:
-                unet.to(accelerator.device, dtype=unet_weight_dtype)  # move to device because unet is not prepared by accelerator
+                unet.to(
+                    accelerator.device, dtype=unet_weight_dtype
+                )  # move to device because unet is not prepared by accelerator
             if train_text_encoder:
                 text_encoders = [
                     (accelerator.prepare(t_enc) if flag else t_enc)
@@ -624,7 +641,9 @@ class NetworkTrainer:
         if args.gradient_checkpointing:
             # according to TI example in Diffusers, train is required
             unet.train()
-            for i, (t_enc, frag) in enumerate(zip(text_encoders, self.get_text_encoders_train_flags(args, text_encoders))):
+            for i, (t_enc, frag) in enumerate(
+                zip(text_encoders, self.get_text_encoders_train_flags(args, text_encoders))
+            ):
                 t_enc.train()
 
                 # set top parameter requires_grad = True for gradient checkpointing works
@@ -655,7 +674,7 @@ class NetworkTrainer:
         def save_model_hook(models, weights, output_dir):
             # pop weights of other models than network to save only network weights
             # only main process or deepspeed https://github.com/huggingface/diffusers/issues/2606
-            #if args.deepspeed:
+            # if args.deepspeed:
             remove_indices = []
             for i, model in enumerate(models):
                 if not isinstance(model, type(accelerator.unwrap_model(network))):
@@ -668,7 +687,9 @@ class NetworkTrainer:
             # save current ecpoch and step
             train_state_file = os.path.join(output_dir, "train_state.json")
             # +1 is needed because the state is saved before current_step is set from global_step
-            logger.info(f"save train state to {train_state_file} at epoch {current_epoch.value} step {current_step.value+1}")
+            logger.info(
+                f"save train state to {train_state_file} at epoch {current_epoch.value} step {current_step.value+1}"
+            )
             with open(train_state_file, "w", encoding="utf-8") as f:
                 json.dump({"current_epoch": current_epoch.value, "current_step": current_step.value + 1}, f)
 
@@ -883,7 +904,10 @@ class NetworkTrainer:
             if use_dreambooth_method:
                 for subset in dataset.subsets:
                     info = reg_dataset_dirs_info if subset.is_reg else dataset_dirs_info
-                    info[os.path.basename(subset.image_dir)] = {"n_repeats": subset.num_repeats, "img_count": subset.img_count}
+                    info[os.path.basename(subset.image_dir)] = {
+                        "n_repeats": subset.num_repeats,
+                        "img_count": subset.img_count,
+                    }
             else:
                 for subset in dataset.subsets:
                     dataset_dirs_info[os.path.basename(subset.metadata_file)] = {
@@ -946,9 +970,7 @@ class NetworkTrainer:
         if args.initial_epoch is not None or args.initial_step is not None:
             # if initial_epoch or initial_step is specified, steps_from_state is ignored even when resuming
             if steps_from_state is not None:
-                logger.warning(
-                    "steps from the state is ignored because initial_step is specified"
-                )
+                logger.warning("steps from the state is ignored because initial_step is specified")
             if args.initial_step is not None:
                 initial_step = args.initial_step
             else:
@@ -984,8 +1006,6 @@ class NetworkTrainer:
                 # if not, only epoch no is skipped for informative purpose
                 epoch_to_start = initial_step // math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
                 initial_step = 0  # do not skip
-
-        
 
         noise_scheduler = self.get_noise_scheduler(args, accelerator.device)
 
@@ -1043,7 +1063,7 @@ class NetworkTrainer:
             text_encoder = None
 
         # For --sample_at_first
-        #self.sample_images(accelerator, args, 0, global_step, accelerator.device, vae, tokenizers, text_encoder, unet)
+        # self.sample_images(accelerator, args, 0, global_step, accelerator.device, vae, tokenizers, text_encoder, unet)
 
         self.global_step = 0
         # training loop
@@ -1081,13 +1101,13 @@ class NetworkTrainer:
         self.save_model = save_model
         self.remove_model = remove_model
         self.comfy_pbar = None
-        
+
         progress_bar = tqdm(range(args.max_train_steps - initial_step), smoothing=0, disable=False, desc="steps")
-        
+
         def training_loop(break_at_steps, epoch):
             steps_done = 0
-            
-            #accelerator.print(f"\nepoch {epoch+1}/{num_train_epochs}")
+
+            # accelerator.print(f"\nepoch {epoch+1}/{num_train_epochs}")
             progress_bar.set_description(f"Epoch {epoch + 1}/{num_train_epochs} - steps")
 
             current_epoch.value = epoch + 1
@@ -1112,7 +1132,9 @@ class NetworkTrainer:
                     else:
                         with torch.no_grad():
                             # encode latents
-                            latents = self.encode_images_to_latents(args, accelerator, vae, batch["images"].to(vae_dtype))
+                            latents = self.encode_images_to_latents(
+                                args, accelerator, vae, batch["images"].to(vae_dtype)
+                            )
                             latents = latents.to(dtype=weight_dtype)
 
                             # NaN check
@@ -1158,7 +1180,9 @@ class NetworkTrainer:
                                     input_ids,
                                 )
                                 if args.full_fp16:
-                                    encoded_text_encoder_conds = [c.to(weight_dtype) for c in encoded_text_encoder_conds]
+                                    encoded_text_encoder_conds = [
+                                        c.to(weight_dtype) for c in encoded_text_encoder_conds
+                                    ]
 
                         # if text_encoder_conds is not cached, use encoded_text_encoder_conds
                         if len(text_encoder_conds) == 0:
@@ -1212,9 +1236,9 @@ class NetworkTrainer:
                     optimizer.zero_grad(set_to_none=True)
 
                 if args.scale_weight_norms:
-                    keys_scaled, mean_norm, maximum_norm = accelerator.unwrap_model(network).apply_max_norm_regularization(
-                        args.scale_weight_norms, accelerator.device
-                    )
+                    keys_scaled, mean_norm, maximum_norm = accelerator.unwrap_model(
+                        network
+                    ).apply_max_norm_regularization(args.scale_weight_norms, accelerator.device)
                     max_mean_logs = {"Keys Scaled": keys_scaled, "Average key norm": mean_norm}
                 else:
                     keys_scaled, mean_norm, maximum_norm = None, None, None
@@ -1235,7 +1259,14 @@ class NetworkTrainer:
 
                 if args.logging_dir is not None:
                     logs = self.generate_step_logs(
-                        args, current_loss, avr_loss, lr_scheduler, lr_descriptions, keys_scaled, mean_norm, maximum_norm
+                        args,
+                        current_loss,
+                        avr_loss,
+                        lr_scheduler,
+                        lr_descriptions,
+                        keys_scaled,
+                        mean_norm,
+                        maximum_norm,
                     )
                     accelerator.log(logs, step=self.global_step)
 
@@ -1247,10 +1278,8 @@ class NetworkTrainer:
             if args.logging_dir is not None:
                 logs = {"loss/epoch": self.loss_recorder.moving_average}
                 accelerator.log(logs, step=epoch + 1)
-  
+
             return steps_done
-        
-        
 
         return training_loop
 
@@ -1290,7 +1319,9 @@ def setup_parser() -> argparse.ArgumentParser:
         " / 勾配チェックポイント時にテンソルをCPUにオフロードする（U-NetまたはDiTのみ、サポートされている場合）",
     )
     parser.add_argument(
-        "--no_metadata", action="store_true", help="do not save metadata in output model / メタデータを出力先モデルに保存しない"
+        "--no_metadata",
+        action="store_true",
+        help="do not save metadata in output model / メタデータを出力先モデルに保存しない",
     )
     parser.add_argument(
         "--save_model_as",
@@ -1316,7 +1347,10 @@ def setup_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--network_weights", type=str, default=None, help="pretrained weights for network / 学習するネットワークの初期重み"
+        "--network_weights",
+        type=str,
+        default=None,
+        help="pretrained weights for network / 学習するネットワークの初期重み",
     )
     parser.add_argument(
         "--network_module", type=str, default=None, help="network module to train / 学習対象のネットワークのモジュール"
