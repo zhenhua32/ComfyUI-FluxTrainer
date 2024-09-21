@@ -29,6 +29,9 @@ class FluxNetworkTrainer(NetworkTrainer):
         self.sample_prompts_te_outputs = None
 
     def assert_extra_args(self, args, train_dataset_group):
+        """
+        flux 训练的额外参数检查
+        """
         super().assert_extra_args(args, train_dataset_group)
         # sdxl_train_util.verify_sdxl_training_args(args)
 
@@ -60,9 +63,13 @@ class FluxNetworkTrainer(NetworkTrainer):
         train_dataset_group.verify_bucket_reso_steps(32)  # TODO check this
 
     def get_flux_model_name(self, args):
+        """模型名字, schnell 或者 dev"""
         return "schnell" if "schnell" in args.pretrained_model_name_or_path else "dev"
 
     def load_target_model(self, args, weight_dtype, accelerator):
+        """
+        加载模型
+        """
         # currently offload to cpu for some models
         name = self.get_flux_model_name(args)
 
@@ -84,9 +91,11 @@ class FluxNetworkTrainer(NetworkTrainer):
             elif model.dtype == torch.float8_e4m3fn or model.dtype == torch.float8_e5m2:
                 logger.info(f"Loaded {model.dtype} FLUX model")
 
+        # 分割模型
         if args.split_mode:
             model = self.prepare_split_model(model, args, weight_dtype, accelerator)
 
+        # 加载 clip 模型
         clip_l = flux_utils.load_clip_l(
             args.clip_l, weight_dtype, "cpu", disable_mmap=args.disable_mmap_load_safetensors
         )
@@ -98,6 +107,7 @@ class FluxNetworkTrainer(NetworkTrainer):
         else:
             loading_dtype = weight_dtype
 
+        # 加载 t5xxl 模型
         # loading t5xxl to cpu takes a long time, so we should load to gpu in future
         t5xxl = flux_utils.load_t5xxl(args.t5xxl, loading_dtype, "cpu", disable_mmap=args.disable_mmap_load_safetensors)
         t5xxl.eval()
@@ -160,6 +170,7 @@ class FluxNetworkTrainer(NetworkTrainer):
         return flux_lower
 
     def get_tokenize_strategy(self, args):
+        """获取 tokenize 策略"""
         name = self.get_flux_model_name(args)
 
         if args.t5xxl_max_token_length is None:
@@ -186,6 +197,7 @@ class FluxNetworkTrainer(NetworkTrainer):
         return strategy_flux.FluxTextEncodingStrategy(apply_t5_attn_mask=args.apply_t5_attn_mask)
 
     def post_process_network(self, args, accelerator, network, text_encoders, unet):
+        """后处理网络"""
         # check t5xxl is trained or not
         self.train_t5xxl = network.train_t5xxl
 
@@ -195,6 +207,7 @@ class FluxNetworkTrainer(NetworkTrainer):
             )
 
     def get_models_for_text_encoding(self, args, accelerator, text_encoders):
+        """获取用于文本编码的模型"""
         if args.cache_text_encoder_outputs:
             if self.train_clip_l and not self.train_t5xxl:
                 return text_encoders[0:1]  # only CLIP-L is needed for encoding because T5XXL is cached
@@ -204,9 +217,11 @@ class FluxNetworkTrainer(NetworkTrainer):
             return text_encoders  # both CLIP-L and T5XXL are needed for encoding
 
     def get_text_encoders_train_flags(self, args, text_encoders):
+        """文本编码器训练有两个标志, clip_l 和 t5xxl"""
         return [self.train_clip_l, self.train_t5xxl]
 
     def get_text_encoder_outputs_caching_strategy(self, args):
+        """获取文本编码器输出缓存策略"""
         if args.cache_text_encoder_outputs:
             # if the text encoders is trained, we need tokenization, so is_partial is True
             return strategy_flux.FluxTextEncoderOutputsCachingStrategy(
@@ -222,6 +237,7 @@ class FluxNetworkTrainer(NetworkTrainer):
     def cache_text_encoder_outputs_if_needed(
         self, args, accelerator: Accelerator, unet, vae, text_encoders, dataset: train_util.DatasetGroup, weight_dtype
     ):
+        """缓存文本编码器输出"""
         if args.cache_text_encoder_outputs:
             if not args.lowram:
                 # reduce memory consumption
@@ -319,9 +335,11 @@ class FluxNetworkTrainer(NetworkTrainer):
         sample_prompts_te_outputs,
         validation_settings,
     ):
+        """采样图片"""
         text_encoders = text_encoder  # for compatibility
         text_encoders = self.get_models_for_text_encoding(args, accelerator, text_encoders)
         if not args.split_mode:
+            # 直出
             image_tensors = flux_train_utils.sample_images(
                 accelerator,
                 args,
@@ -346,6 +364,7 @@ class FluxNetworkTrainer(NetworkTrainer):
                 self.target_device = device
 
             def forward(self, img, img_ids, txt, txt_ids, timesteps, y, guidance=None, txt_attention_mask=None):
+                """这里就要调用多个模型了, 且每次要清空显存"""
                 self.flux_lower.to("cpu")
                 clean_memory_on_device(self.target_device)
                 self.flux_upper.to(self.target_device)
@@ -381,6 +400,7 @@ class FluxNetworkTrainer(NetworkTrainer):
         return noise_scheduler
 
     def encode_images_to_latents(self, args, accelerator, vae, images):
+        """图片转 latents"""
         return vae.encode(images)
 
     def shift_scale_latents(self, args, latents):
@@ -436,6 +456,7 @@ class FluxNetworkTrainer(NetworkTrainer):
         if not args.split_mode:
             # normal forward
             with accelerator.autocast():
+                # unet 模型预测
                 # YiYi notes: divide it by 1000 for now because we scale it by 1000 in the transformer model (we should not keep it but I want to keep the inputs same for the model for testing)
                 model_pred = unet(
                     img=packed_noisy_model_input,
@@ -515,6 +536,7 @@ class FluxNetworkTrainer(NetworkTrainer):
         metadata["ss_discrete_flow_shift"] = args.discrete_flow_shift
 
     def is_text_encoder_not_needed_for_training(self, args):
+        """是否不需要文本编码器进行训练"""
         return args.cache_text_encoder_outputs and not self.is_train_text_encoder(args)
 
     def prepare_text_encoder_grad_ckpt_workaround(self, index, text_encoder):
@@ -565,6 +587,7 @@ class FluxNetworkTrainer(NetworkTrainer):
 
 
 def setup_parser() -> argparse.ArgumentParser:
+    """设置参数解析器"""
     parser = setup_parser()
     flux_train_utils.add_flux_train_arguments(parser)
 
