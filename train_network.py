@@ -49,6 +49,10 @@ logger = logging.getLogger(__name__)
 
 
 class NetworkTrainer:
+    """
+    网络训练器
+    """
+
     def __init__(self):
         self.vae_scale_factor = 0.18215
         self.is_sdxl = False
@@ -161,7 +165,7 @@ class NetworkTrainer:
     def sample_images(self, accelerator, args, epoch, global_step, device, vae, tokenizers, text_encoder, unet):
         train_util.sample_images(accelerator, args, epoch, global_step, device, vae, tokenizers[0], text_encoder, unet)
 
-    # region SD/SDXL
+    # region SD/SDXL 专用的部分
 
     def post_process_network(self, args, accelerator, network, text_encoders, unet):
         pass
@@ -262,6 +266,10 @@ class NetworkTrainer:
     # endregion
 
     def init_train(self, args):
+        """
+        这个应该是主要的训练函数
+        """
+
         session_id = random.randint(0, 2**32)
         training_started_at = time.time()
         train_util.verify_training_args(args)
@@ -353,7 +361,7 @@ class NetworkTrainer:
 
         self.assert_extra_args(args, train_dataset_group)  # may change some args
 
-        # prepare accelerator
+        # prepare accelerator 初始化 accelerator
         logger.info("preparing accelerator")
         accelerator = train_util.prepare_accelerator(args)
 
@@ -385,6 +393,7 @@ class NetworkTrainer:
 
                 accelerator.print(f"merging module: {weight_path} with multiplier {multiplier}")
 
+                # 合并权重
                 module, weights_sd = network_module.create_network_from_weights(
                     multiplier, weight_path, vae, text_encoder, unet, for_inference=True
                 )
@@ -435,6 +444,7 @@ class NetworkTrainer:
                 # workaround for LyCORIS (;^ω^)
                 net_kwargs["dropout"] = args.network_dropout
 
+            # 创建 lora 网络
             network = network_module.create_network(
                 1.0,
                 args.network_dim,
@@ -531,6 +541,7 @@ class NetworkTrainer:
         # DataLoaderのプロセス数：0 は persistent_workers が使えないので注意
         n_workers = min(args.max_data_loader_n_workers, os.cpu_count())  # cpu_count or max_data_loader_n_workers
 
+        # 加载数据集
         train_dataloader = torch.utils.data.DataLoader(
             train_dataset_group,
             batch_size=1,
@@ -572,6 +583,7 @@ class NetworkTrainer:
         unet_weight_dtype = te_weight_dtype = weight_dtype
         # Experimental Feature: Put base model into fp8 to save vram
         if args.fp8_base or args.fp8_base_unet:
+            # FP8 训练
             assert torch.__version__ >= "2.1.0", "fp8_base requires torch>=2.1.0"
             assert args.mixed_precision != "no", "fp8_base requires mixed precision='fp16' or 'bf16'"
             accelerator.print("enable fp8 training for U-Net.")
@@ -585,6 +597,7 @@ class NetworkTrainer:
             # unet.to(accelerator.device)  # this makes faster `to(dtype)` below, but consumes 23 GB VRAM
             # unet.to(dtype=unet_weight_dtype)  # without moving to gpu, this takes a lot of time and main memory
 
+            # 这里是将 unet 的权重转换为 fp8
             unet.to(accelerator.device, dtype=unet_weight_dtype)  # this seems to be safer than above
 
         unet.requires_grad_(False)
@@ -717,7 +730,7 @@ class NetworkTrainer:
         accelerator.register_save_state_pre_hook(save_model_hook)
         accelerator.register_load_state_pre_hook(load_model_hook)
 
-        # resume from local or huggingface
+        # resume from local or huggingface 从本地或 huggingface 恢复模型
         train_util.resume_from_local_or_hf_if_specified(accelerator, args)
 
         pbar.update(1)
@@ -826,6 +839,7 @@ class NetworkTrainer:
                 }
 
                 subsets_metadata = []
+                # 这是有多个数据集的情况
                 for subset in dataset.subsets:
                     subset_metadata = {
                         "img_count": subset.img_count,
@@ -1105,7 +1119,10 @@ class NetworkTrainer:
         progress_bar = tqdm(range(args.max_train_steps - initial_step), smoothing=0, disable=False, desc="steps")
 
         def training_loop(break_at_steps, epoch):
-            steps_done = 0
+            """
+            一个在整个数据集上的训练循环
+            """
+            steps_done = 0  # 记录步数
 
             # accelerator.print(f"\nepoch {epoch+1}/{num_train_epochs}")
             progress_bar.set_description(f"Epoch {epoch + 1}/{num_train_epochs} - steps")
@@ -1121,12 +1138,15 @@ class NetworkTrainer:
                 skipped_dataloader = accelerator.skip_first_batches(train_dataloader, self.initial_step)
                 self.initial_step = 0
 
+            # 是迭代了整个数据集
             for step, batch in enumerate(skipped_dataloader or train_dataloader):
+                # 每一步
                 current_step.value = self.global_step
 
                 with accelerator.accumulate(training_model):
                     on_step_start(text_encoder, unet)
 
+                    # 有缓存的 latents
                     if "latents" in batch and batch["latents"] is not None:
                         latents = batch["latents"].to(accelerator.device).to(dtype=weight_dtype)
                     else:
@@ -1159,6 +1179,7 @@ class NetworkTrainer:
                     text_encoder_outputs_list = batch.get("text_encoder_outputs_list", None)
                     if text_encoder_outputs_list is not None:
                         text_encoder_conds = text_encoder_outputs_list  # List of text encoder outputs
+                    # 重新计算下 text_encoder_conds
                     if len(text_encoder_conds) == 0 or text_encoder_conds[0] is None or train_text_encoder:
                         with torch.set_grad_enabled(train_text_encoder), accelerator.autocast():
                             # Get the text embedding for conditioning
@@ -1214,6 +1235,7 @@ class NetworkTrainer:
                         loss = loss * weighting
                     if args.masked_loss or ("alpha_masks" in batch and batch["alpha_masks"] is not None):
                         loss = apply_masked_loss(loss, batch)
+                    # 在 batch 上求平均损失, 结果 shape 是 (batch_size,)
                     loss = loss.mean([1, 2, 3])
 
                     loss_weights = batch["loss_weights"]  # weight for each sample
@@ -1224,6 +1246,7 @@ class NetworkTrainer:
 
                     loss = loss.mean()  # No need to divide by batch_size since it's an average
 
+                    # 终于反向传播了
                     accelerator.backward(loss)
                     if accelerator.sync_gradients:
                         self.all_reduce_network(accelerator, network)  # sync DDP grad manually
@@ -1231,6 +1254,7 @@ class NetworkTrainer:
                             params_to_clip = accelerator.unwrap_model(network).get_trainable_params()
                             accelerator.clip_grad_norm_(params_to_clip, args.max_grad_norm)
 
+                    # 更新优化器等
                     optimizer.step()
                     lr_scheduler.step()
                     optimizer.zero_grad(set_to_none=True)
@@ -1245,6 +1269,7 @@ class NetworkTrainer:
 
                 # Checks if the accelerator has performed an optimization step behind the scenes
                 if accelerator.sync_gradients:
+                    # 这个时候才更新步数
                     progress_bar.update(1)
                     self.global_step += 1
 

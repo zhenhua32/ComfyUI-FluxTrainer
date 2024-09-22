@@ -1376,7 +1376,7 @@ class FluxTrainLoop:
             network_trainer.optimizer_train_fn()
 
             while network_trainer.global_step < target_global_step:
-                # 训练一步
+                # 在整个数据集上训练一轮
                 steps_done = training_loop(
                     break_at_steps=target_global_step,
                     epoch=network_trainer.current_epoch.value,
